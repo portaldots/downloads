@@ -5,6 +5,8 @@ const MAX_PAGES = 10;
 const ZIP_ASSET_NAME = 'PortalDots.zip';
 const FRESH_SECONDS = 120;
 // 期限切れでも GitHub 障害時に返せるよう、Cache API 側には長めに残す
+// GitHub 取得に失敗したあと、次に再取得を試すまでの秒数
+const RETRY_SECONDS = 30;
 const RETAIN_SECONDS = 7 * 24 * 60 * 60;
 const CACHE_KEY = 'https://portaldots-releases.invalid/candidates/v1';
 
@@ -111,25 +113,34 @@ async function loadCandidates(deps: Deps): Promise<Candidate[]> {
     stale = data;
   }
 
-  try {
-    const fresh = await fetchCandidates(deps);
+  const store = (data: Candidate[], fetchedAt: number) => {
     const put = deps.cache.put(
       cacheRequest,
-      new Response(JSON.stringify(fresh), {
+      new Response(JSON.stringify(data), {
         headers: {
           'Content-Type': 'application/json',
           'Cache-Control': `public, max-age=${RETAIN_SECONDS}`,
-          'X-Fetched-At': String(now),
+          'X-Fetched-At': String(fetchedAt),
         },
       }),
     );
     if (deps.waitUntil) deps.waitUntil(put);
-    else await put;
+    else return put;
+  };
+
+  try {
+    const fresh = await fetchCandidates(deps);
+    await store(fresh, now);
     return fresh;
   } catch (e) {
     console.error('failed to fetch releases from GitHub', e);
     // GitHub 障害時は期限切れでもキャッシュを返す。なければ空
-    return stale ?? [];
+    if (stale) {
+      // 障害中に毎リクエスト GitHub を叩かないよう、RETRY_SECONDS 後まで再取得を待つ
+      await store(stale, now - (FRESH_SECONDS - RETRY_SECONDS) * 1000);
+      return stale;
+    }
+    return [];
   }
 }
 

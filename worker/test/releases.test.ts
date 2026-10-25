@@ -120,6 +120,20 @@ describe('キャッシュと GitHub 障害時の挙動', () => {
     expect((await getAllReleases(h.deps, 6)).map((r) => r.version)).toEqual(['6.0.0']);
   });
 
+  it('GitHub の障害中は、30秒の間は再取得せず期限切れのキャッシュを返す', async () => {
+    const h = harness(pages);
+    await getAllReleases(h.deps, 6);
+    h.setNow(1_000_000 + 10 * 60_000);
+    h.setFail(true);
+    await getAllReleases(h.deps, 6);
+    h.setNow(1_000_000 + 10 * 60_000 + 29_000);
+    await getAllReleases(h.deps, 6);
+    expect(h.calls).toHaveLength(2);
+    h.setNow(1_000_000 + 10 * 60_000 + 31_000);
+    await getAllReleases(h.deps, 6);
+    expect(h.calls).toHaveLength(3);
+  });
+
   it('GitHub が失敗し、キャッシュもなければ空配列。失敗はキャッシュしない', async () => {
     const h = harness(pages);
     h.setFail(true);
