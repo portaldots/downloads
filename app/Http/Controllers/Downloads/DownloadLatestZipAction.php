@@ -28,10 +28,14 @@ class DownloadLatestZipAction extends Controller
 
         $releases = $this->releaseInfoService->getAllReleases($major_version);
 
+        if (count($releases) === 0) {
+            abort(404);
+        }
+
         $latest_release_version = $releases[0]->getVersion()->getFullVersion();
 
         return redirect(
-            "https://github.com/portal-dots/PortalDots/releases/download/v{$latest_release_version}/PortalDots.zip"
+            "https://github.com/portaldots/PortalDots/releases/download/v{$latest_release_version}/PortalDots.zip"
         );
     }
 }
